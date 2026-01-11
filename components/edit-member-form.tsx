@@ -8,6 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 
 export default function EditMemberForm({ member, onCancel, onSuccess }: any) {
+  // Debug: Log the initial member data
+  console.log('Initial member data in EditMemberForm:', member)
+
   const [formData, setFormData] = useState({
     name: member.name,
     email: member.email,
@@ -48,37 +51,50 @@ export default function EditMemberForm({ member, onCancel, onSuccess }: any) {
     e.preventDefault()
     setError("")
 
+    // Debug: Log the member data being used for the update
+    console.log('Updating member with ID:', member._id)
+    console.log('Current form data:', formData)
+
     setIsLoading(true)
 
     try {
       let photoUrl = member.photoUrl
 
       if (formData.photo) {
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+        const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+        if (!cloudName || !uploadPreset) {
+          throw new Error("Cloudinary env not set: NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME / NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET")
+        }
         const photoFormData = new FormData()
         photoFormData.append("file", formData.photo)
-
-        const photoResponse = await fetch("/api/upload-photo", {
+        photoFormData.append("upload_preset", uploadPreset)
+        const photoResponse = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
           method: "POST",
           body: photoFormData,
         })
-
         if (!photoResponse.ok) throw new Error("Photo upload failed")
-
         const photoData = await photoResponse.json()
-        photoUrl = photoData.url
+        photoUrl = photoData.secure_url || photoData.url
       }
+
+      // Debug: Log the API request details
+      const updateData = {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        fee: Number.parseFloat(formData.fee),
+        months: Number.parseInt(formData.months),
+        photoUrl,
+      }
+      
+      console.log('Sending update request to:', `/api/members/${member._id}`)
+      console.log('Update data:', updateData)
 
       const memberResponse = await fetch(`/api/members/${member._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          fee: Number.parseFloat(formData.fee),
-          months: Number.parseInt(formData.months),
-          photoUrl,
-        }),
+        body: JSON.stringify(updateData),
       })
 
       if (!memberResponse.ok) throw new Error("Failed to update member")

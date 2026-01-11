@@ -42,8 +42,8 @@ export default function LoginForm({ setIsLoggedIn }: { setIsLoggedIn: (value: bo
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-      <Card className="w-full max-w-md">
+    <div className="flex items-center justify-center min-h-screen bg-linear-to-br from-slate-900 to-slate-800">
+      <Card className="w-full max-w-md mx-4">
         <CardHeader>
           <CardTitle className="text-2xl">Gym Management System</CardTitle>
           <CardDescription>Sign in to manage your gym members</CardDescription>

@@ -114,7 +114,7 @@ export default function MembersList({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex justify-center md:justify-start gap-4 flex-wrap">
               <Button
                 variant={filterStatus === "all" ? "default" : "outline"}
                 size="sm"
@@ -158,61 +158,102 @@ export default function MembersList({
           ) : filteredMembers.length === 0 ? (
             <p className="text-gray-500">No members found</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2">Name</th>
-                    <th className="text-left p-2">Email</th>
-                    <th className="text-left p-2">Phone</th>
-                    <th className="text-left p-2">Monthly Fee</th>
-                    <th className="text-left p-2">Expires</th>
-                    <th className="text-left p-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMembers.map((member) => {
-                    const daysLeft = calculateDaysLeft(member.expiryDate)
-                    const isExpiring = daysLeft <= 30 && daysLeft > 0
-                    const isExpired = daysLeft <= 0
+            <>
+              {/* Desktop/tablet table */}
+              <div className="overflow-x-auto hidden md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2">Name</th>
+                      <th className="text-left p-2">Email</th>
+                      <th className="text-left p-2">Phone</th>
+                      <th className="text-left p-2">Monthly Fee</th>
+                      <th className="text-left p-2">Expires</th>
+                      <th className="text-left p-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMembers.map((member) => {
+                      const daysLeft = calculateDaysLeft(member.expiryDate)
+                      const isExpiring = daysLeft <= 30 && daysLeft > 0
+                      const isExpired = daysLeft <= 0
 
-                    return (
-                      <tr
-                        key={member._id}
-                        className="border-b hover:bg-slate-50 cursor-pointer"
-                        onClick={() => setSelectedMember(member)}
-                      >
-                        <td className="p-2">{member.name}</td>
-                        <td className="p-2">{member.email}</td>
-                        <td className="p-2">{member.phone}</td>
-                        <td className="p-2">₹{member.fee.toFixed(2)}</td>
-                        <td className="p-2">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              isExpired
-                                ? "bg-red-100 text-red-800"
-                                : isExpiring
+                      return (
+                        <tr
+                          key={member._id}
+                          className="border-b hover:bg-slate-50 cursor-pointer"
+                          onClick={() => setSelectedMember(member)}
+                        >
+                          <td className="p-2">{member.name}</td>
+                          <td className="p-2">{member.email}</td>
+                          <td className="p-2">{member.phone}</td>
+                          <td className="p-2">₹{member.fee.toFixed(2)}</td>
+                          <td className="p-2">
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                isExpired
+                                  ? "bg-red-100 text-red-800"
+                                  : isExpiring
                                   ? "bg-yellow-100 text-yellow-800"
                                   : "bg-green-100 text-green-800"
-                            }`}
-                          >
-                            {isExpired ? "Expired" : `${daysLeft} days`}
-                          </span>
-                        </td>
-                        <td className="p-2 space-x-2" onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="outline" onClick={() => setEditingId(member._id)}>
-                            Edit
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => handleDelete(member._id)}>
-                            Delete
-                          </Button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                              }`}
+                            >
+                              {isExpired ? "Expired" : `${daysLeft} days`}
+                            </span>
+                          </td>
+                          <td className="p-2 space-x-2" onClick={(e) => e.stopPropagation()}>
+                            <Button size="sm" variant="outline" onClick={() => setEditingId(member._id)}>
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDelete(member._id)}>
+                              Delete
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {filteredMembers.map((member) => {
+                  const daysLeft = calculateDaysLeft(member.expiryDate)
+                  const isExpiring = daysLeft <= 30 && daysLeft > 0
+                  const isExpired = daysLeft <= 0
+                  const badge = isExpired
+                    ? "bg-red-100 text-red-800"
+                    : isExpiring
+                    ? "bg-yellow-100 text-yellow-800"
+                    : "bg-green-100 text-green-800"
+                  return (
+                    <div
+                      key={member._id}
+                      className="rounded-lg border p-3 bg-white"
+                      onClick={() => setSelectedMember(member)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold text-slate-900">{member.name}</div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${badge}`}>
+                          {isExpired ? "Expired" : `${daysLeft} days`}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600 break-all">{member.email}</div>
+                      <div className="mt-1 text-xs text-slate-600">{member.phone}</div>
+                      <div className="mt-2 flex items-center justify-between text-sm">
+                        <div className="text-slate-500">Fee</div>
+                        <div className="font-medium">₹{member.fee.toFixed(2)}</div>
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <Button size="sm" variant="outline" className="flex-1" onClick={(e) => { e.stopPropagation(); setEditingId(member._id) }}>Edit</Button>
+                        <Button size="sm" variant="destructive" className="flex-1" onClick={(e) => { e.stopPropagation(); handleDelete(member._id) }}>Delete</Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

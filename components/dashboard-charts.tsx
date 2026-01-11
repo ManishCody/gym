@@ -17,9 +17,12 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 export default function DashboardCharts({ members }: { members: any[] }) {
   const today = new Date()
+  const isMobile = useIsMobile()
+  const chartHeight = isMobile ? 220 : 300
 
   // Calculate subscription status
   const activeMembers = members.filter((m) => new Date(m.expiryDate) > today).length
@@ -38,16 +41,32 @@ export default function DashboardCharts({ members }: { members: any[] }) {
   const statusDataFiltered = statusData.filter((d) => d.value > 0)
   const statusTotal = statusData.reduce((s, d) => s + d.value, 0)
 
-  // Monthly revenue chart
+  // Helper: list billing month indices (0-11) in the current year for a member
+  const billingMonthsForMember = (m: any) => {
+    const months: number[] = []
+    const join = new Date(m.joinDate)
+    const joinYear = join.getUTCFullYear()
+    const currentYear = today.getUTCFullYear()
+    const startMonth = join.getUTCDate() === 1 ? join.getUTCMonth() : (join.getUTCMonth() + 1)
+    const total = Number(m.months || 0)
+    for (let k = 0; k < total; k++) {
+      // absolute month index from year 0
+      const absMonth = (joinYear * 12) + startMonth + k
+      const y = Math.floor(absMonth / 12)
+      const mIdx = absMonth % 12
+      if (y === currentYear) months.push(mIdx)
+    }
+    return months
+  }
+
+  // Monthly revenue chart - allocate exactly `months` buckets per above rule
   const monthlyRevenue = Array.from({ length: 12 }, (_, i) => {
-    const date = new Date(today.getFullYear(), i, 1)
+    const monthStart = new Date(Date.UTC(today.getUTCFullYear(), i, 1))
     const monthRevenue = members.reduce((sum, member) => {
-      if (new Date(member.joinDate) <= date && new Date(member.expiryDate) > date) {
-        return sum + member.fee
-      }
-      return sum
+      const months = billingMonthsForMember(member)
+      return months.includes(i) ? sum + Number(member.fee || 0) : sum
     }, 0)
-    return { month: date.toLocaleString("default", { month: "short" }), revenue: monthRevenue }
+    return { month: monthStart.toLocaleString("default", { month: "short" }), revenue: monthRevenue }
   })
 
   // Member join dates
@@ -109,7 +128,50 @@ export default function DashboardCharts({ members }: { members: any[] }) {
           <CardTitle className="text-sm">Total Monthly Revenue</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-3xl font-bold">{formatCurrency(members.filter((m) => new Date(m.expiryDate) > today).reduce((sum, m) => sum + m.fee, 0))}</p>
+          {(() => {
+            // Calculate total monthly revenue from all active members
+            const total = members
+              .filter(member => new Date(member.expiryDate) > today) // Only active members
+              .reduce((sum, member) => sum + Number(member.fee || 0), 0)
+            
+            return <p className="text-3xl font-bold">{formatCurrency(total)}</p>
+          })()}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Total Revenue Earned</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            // Calculate total revenue earned from all members (fee * months)
+            const totalEarned = members.reduce((sum, member) => {
+              return sum + (Number(member.fee || 0) * Number(member.months || 0))
+            }, 0)
+            
+            return <p className="text-3xl font-bold text-purple-600">{formatCurrency(totalEarned)}</p>
+          })()}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">New Members This Month</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const currentMonth = today.getMonth();
+            const currentYear = today.getFullYear();
+            
+            const newMembers = members.filter(member => {
+              const joinDate = new Date(member.joinDate);
+              return joinDate.getMonth() === currentMonth && 
+                     joinDate.getFullYear() === currentYear;
+            }).length;
+            
+            return <p className="text-3xl font-bold text-blue-600">{newMembers}</p>
+          })()}
         </CardContent>
       </Card>
 
@@ -119,7 +181,7 @@ export default function DashboardCharts({ members }: { members: any[] }) {
           <CardTitle>Subscription Status</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
             <PieChart>
               {statusTotal === 0 ? (
                 <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="#94a3b8">
@@ -130,16 +192,16 @@ export default function DashboardCharts({ members }: { members: any[] }) {
                   data={statusDataFiltered}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  labelLine
-                  label={renderPieLabel}
+                  innerRadius={isMobile ? 50 : 60}
+                  outerRadius={isMobile ? 72 : 90}
+                  labelLine={!isMobile}
+                  label={isMobile ? false : renderPieLabel}
                   dataKey="value"
                 >
                   {statusDataFiltered.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
-                  <Label
+                  {/* <Label
                     position="center"
                     content={() => (
                       <text x={0} y={0} textAnchor="middle" dominantBaseline="middle">
@@ -147,11 +209,11 @@ export default function DashboardCharts({ members }: { members: any[] }) {
                         <tspan x={0} dy={18} className="fill-slate-500 text-xs">Total</tspan>
                       </text>
                     )}
-                  />
+                  /> */}
                 </Pie>
               )}
               <Tooltip formatter={(val: number, name: string) => [val, name]} />
-              <Legend />
+              {!isMobile && <Legend />}
             </PieChart>
           </ResponsiveContainer>
         </CardContent>
@@ -164,14 +226,14 @@ export default function DashboardCharts({ members }: { members: any[] }) {
           <CardDescription>Expected revenue for active subscriptions</CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={monthlyRevenue}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <LineChart data={monthlyRevenue} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis tickFormatter={formatCurrency as any} />
+              <XAxis dataKey="month" tick={{ fontSize: isMobile ? 10 : 12 }} />
+              <YAxis tickFormatter={formatCurrency as any} tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 42 : 60} />
               <Tooltip formatter={(val: number) => [formatCurrency(val), "Revenue"]} />
-              <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#3b82f6" />
+              {!isMobile && <Legend />}
+              <Line type="monotone" dataKey="revenue" stroke="#3b82f6" dot={{ r: isMobile ? 2 : 3 }} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>
@@ -184,13 +246,13 @@ export default function DashboardCharts({ members }: { members: any[] }) {
           <CardDescription>New members joined each month</CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={joinDatesData}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart data={joinDatesData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
+              <XAxis dataKey="month" tick={{ fontSize: isMobile ? 10 : 12 }} />
+              <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 24 : 40} />
               <Tooltip />
-              <Legend />
+              {!isMobile && <Legend />}
               <Bar dataKey="members" fill="#8b5cf6" />
             </BarChart>
           </ResponsiveContainer>

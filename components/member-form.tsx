@@ -15,6 +15,7 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
     fee: "",
     months: "",
     photo: null as File | null,
+    joinDate: new Date().toISOString().slice(0, 10),
   })
   const [previewUrl, setPreviewUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -50,7 +51,7 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
     setError("")
     setSuccess("")
 
-    if (!formData.name || !formData.email || !formData.phone || !formData.fee || !formData.months || !formData.photo) {
+    if (!formData.name || !formData.email || !formData.phone || !formData.fee || !formData.months || !formData.photo || !formData.joinDate) {
       setError("All fields are required")
       return
     }
@@ -58,11 +59,18 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
     setIsLoading(true)
 
     try {
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+      const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+      if (!cloudName || !uploadPreset) {
+        throw new Error("Cloudinary env not set: NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME / NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET")
+      }
+
       const photoFormData = new FormData()
       photoFormData.append("file", formData.photo)
+      photoFormData.append("upload_preset", uploadPreset)
 
-      // Upload photo to Blob
-      const photoResponse = await fetch("/api/upload-photo", {
+      // Direct upload to Cloudinary from client (bypasses server network issues)
+      const photoResponse = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
         method: "POST",
         body: photoFormData,
       })
@@ -81,15 +89,15 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
           phone: formData.phone,
           fee: Number.parseFloat(formData.fee),
           months: Number.parseInt(formData.months),
-          photoUrl: photoData.url,
-          joinDate: new Date().toISOString(),
+          photoUrl: photoData.secure_url || photoData.url,
+          joinDate: new Date(formData.joinDate + "T00:00:00.000Z").toISOString(),
         }),
       })
 
       if (!memberResponse.ok) throw new Error("Failed to save member")
 
       setSuccess("Member added successfully!")
-      setFormData({ name: "", email: "", phone: "", fee: "", months: "", photo: null })
+      setFormData({ name: "", email: "", phone: "", fee: "", months: "", photo: null, joinDate: new Date().toISOString().slice(0, 10) })
       setPreviewUrl("")
 
       setTimeout(() => {
@@ -103,7 +111,7 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <Card>
+    <Card className="p-4 md:p-6">
       <CardHeader>
         <CardTitle>Add New Member</CardTitle>
         <CardDescription>Register a new gym member with subscription details</CardDescription>
@@ -152,6 +160,16 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
               />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Join Date</label>
+              <Input
+                name="joinDate"
+                type="date"
+                value={formData.joinDate}
+                onChange={handleInputChange}
+                max={new Date().toISOString().slice(0, 10)}
+              />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Photo (JPG, JPEG, PNG)</label>
               <Input name="photo" type="file" accept=".jpg,.jpeg,.png" onChange={handleFileChange} />
             </div>
@@ -160,7 +178,7 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
           {previewUrl && (
             <div className="mt-4">
               <p className="text-sm font-medium mb-2">Photo Preview</p>
-              <img src={previewUrl || "/placeholder.svg"} alt="Preview" className="w-32 h-32 object-cover rounded" />
+              <img src={previewUrl || "/placeholder.svg"} alt="Preview" className="w-24 h-24 md:w-32 md:h-32 object-cover rounded" />
             </div>
           )}
 
