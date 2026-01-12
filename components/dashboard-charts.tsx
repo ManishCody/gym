@@ -1,23 +1,10 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  Label,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts"
+import { EChart, formatCurrency } from "@/components/ui/echart"
 import { useIsMobile } from "@/hooks/use-mobile"
+import * as echarts from 'echarts/core'
+import { useMemo } from 'react'
 
 export default function DashboardCharts({ members }: { members: any[] }) {
   const today = new Date()
@@ -59,39 +46,182 @@ export default function DashboardCharts({ members }: { members: any[] }) {
     return months
   }
 
-  // Monthly revenue chart - allocate exactly `months` buckets per above rule
-  const monthlyRevenue = Array.from({ length: 12 }, (_, i) => {
-    const monthStart = new Date(Date.UTC(today.getUTCFullYear(), i, 1))
-    const monthRevenue = members.reduce((sum, member) => {
-      const months = billingMonthsForMember(member)
-      return months.includes(i) ? sum + Number(member.fee || 0) : sum
-    }, 0)
-    return { month: monthStart.toLocaleString("default", { month: "short" }), revenue: monthRevenue }
-  })
+  // 1. Monthly Revenue Calculation - Shows last 3 months of previous year and current year
+  const getMonthlyRevenue = (year: number, monthIndex: number, members: any[]) => {
+    return members.reduce((total: number, member: any) => {
+      const joinDate = new Date(member.joinDate);
+      const expiryDate = new Date(member.expiryDate);
+      const memberJoinYear = joinDate.getFullYear();
+      const memberExpiryYear = expiryDate.getFullYear();
+      const memberJoinMonth = joinDate.getMonth();
+      const memberExpiryMonth = expiryDate.getMonth();
+      
+      if (
+        (memberJoinYear < year || (memberJoinYear === year && memberJoinMonth <= monthIndex)) &&
+        (memberExpiryYear > year || (memberExpiryYear === year && memberExpiryMonth >= monthIndex))
+      ) {
+        return total + (Number(member.fee) || 0);
+      }
+      return total;
+    }, 0);
+  };
 
-  // Member join dates
-  const joinDatesData = Array.from({ length: 12 }, (_, i) => {
-    const monthDate = new Date(today.getFullYear(), i, 1)
-    const count = members.filter((m) => new Date(m.joinDate).getMonth() === i).length
-    return { month: monthDate.toLocaleString("default", { month: "short" }), members: count }
-  })
-
-  const COLORS = ["#10b981", "#f59e0b", "#ef4444"]
-
-  const formatCurrency = (val: number) => `₹${val.toLocaleString(undefined, { minimumFractionDigits: 0 })}`
-
-  const RADIAN = Math.PI / 180
-  const renderPieLabel = ({ cx, cy, midAngle, outerRadius, name, value, percent }: any) => {
-    // Position label slightly outside the slice
-    const radius = outerRadius + 14
-    const x = cx + radius * Math.cos(-midAngle * RADIAN)
-    const y = cy + radius * Math.sin(-midAngle * RADIAN)
-    return (
-      <text x={x} y={y} fill="#334155" textAnchor={x > cx ? "start" : "end"} dominantBaseline="central">
-        {name}: {value} ({Math.round(percent * 100)}%)
-      </text>
-    )
+  const currentYear = today.getFullYear();
+  const monthlyRevenue: Array<{month: string, revenue: number, isPreviousYear?: boolean, isCurrentYear?: boolean}> = [];
+  
+  // Add previous year's last 3 months (Oct, Nov, Dec)
+  for (let i = 9; i < 12; i++) {
+    const monthName = new Date(currentYear - 1, i, 1).toLocaleString("default", { month: "short" });
+    const revenue = getMonthlyRevenue(currentYear - 1, i, members);
+    monthlyRevenue.push({
+      month: `${monthName} '${(currentYear - 1).toString().slice(2)}`,
+      revenue,
+      isPreviousYear: true
+    });
   }
+  
+  // Add current year's months up to current month
+  for (let i = 0; i <= today.getMonth(); i++) {
+    const monthName = new Date(currentYear, i, 1).toLocaleString("default", { month: "short" });
+    const revenue = getMonthlyRevenue(currentYear, i, members);
+    monthlyRevenue.push({
+      month: `${monthName} '${currentYear.toString().slice(2)}`,
+      revenue,
+      isCurrentYear: true
+    });
+  }
+
+  // 2. Member Sign-ups Calculation - Show last 3 months of previous year and current year
+  const joinDatesData = [];
+  
+  // Add previous year's last 3 months (Oct, Nov, Dec)
+  for (let i = 9; i < 12; i++) {
+    const monthName = new Date(currentYear - 1, i, 1).toLocaleString("default", { month: "short" });
+    const signUps = members.filter((member: any) => {
+      const joinDate = new Date(member.joinDate);
+      return joinDate.getFullYear() === currentYear - 1 && joinDate.getMonth() === i;
+    }).length;
+    
+    joinDatesData.push({
+      month: `${monthName} '${(currentYear - 1).toString().slice(2)}`,
+      signUps,
+      isPreviousYear: true
+    });
+  }
+  
+  // Add current year's months up to current month
+  for (let i = 0; i <= today.getMonth(); i++) {
+    const monthName = new Date(currentYear, i, 1).toLocaleString("default", { month: "short" });
+    const signUps = members.filter((member: any) => {
+      const joinDate = new Date(member.joinDate);
+      return joinDate.getFullYear() === currentYear && joinDate.getMonth() === i;
+    }).length;
+    
+    joinDatesData.push({
+      month: `${monthName} '${currentYear.toString().slice(2)}`,
+      signUps,
+      isCurrentYear: true
+    });
+  }
+
+  const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#8b5cf6", "#ec4899"]
+
+  // Calculate membership plan distribution
+  const membershipPlans = useMemo(() => {
+    const planMap = new Map<string, number>();
+    members.forEach(member => {
+      const plan = member.plan || 'No Plan';
+      planMap.set(plan, (planMap.get(plan) || 0) + 1);
+    });
+    return Array.from(planMap.entries()).map(([name, value]) => ({ name, value }));
+  }, [members]);
+
+  // Calculate subscription duration distribution
+  const subscriptionDurations = useMemo(() => {
+    const durationMap = new Map<number, number>();
+    members.forEach(member => {
+      const months = Number(member.months) || 0;
+      durationMap.set(months, (durationMap.get(months) || 0) + 1);
+    });
+    return Array.from(durationMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([months, count]) => ({
+        name: months === 1 ? '1 month' : `${months} months`,
+        value: count
+      }));
+  }, [members]);
+
+  // Calculate days remaining distribution
+  const daysRemainingData = useMemo(() => {
+    const today = new Date();
+    const buckets = [
+      { name: 'Expired', min: -Infinity, max: 0, count: 0 },
+      { name: '0-7 days', min: 0, max: 7, count: 0 },
+      { name: '8-30 days', min: 8, max: 30, count: 0 },
+      { name: '1-3 months', min: 31, max: 90, count: 0 },
+      { name: '3-6 months', min: 91, max: 180, count: 0 },
+      { name: '6+ months', min: 181, max: Infinity, count: 0 },
+    ];
+
+    members.forEach(member => {
+      const expiryDate = new Date(member.expiryDate);
+      const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      
+      for (const bucket of buckets) {
+        if (daysLeft > bucket.min && daysLeft <= bucket.max) {
+          bucket.count++;
+          break;
+        }
+      }
+    });
+
+    return buckets.filter(b => b.count > 0);
+  }, [members]);
+
+  // Calculate fee distribution
+  const feeDistribution = useMemo(() => {
+    const feeMap = new Map<number, { count: number, total: number }>();
+    
+    members.forEach(member => {
+      const fee = Number(member.fee) || 0;
+      const roundedFee = Math.round(fee / 500) * 500; // Group by 500 increments
+      const data = feeMap.get(roundedFee) || { count: 0, total: 0 };
+      feeMap.set(roundedFee, {
+        count: data.count + 1,
+        total: data.total + fee
+      });
+    });
+
+    return Array.from(feeMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([fee, data]) => ({
+        name: `₹${fee.toLocaleString()}`,
+        count: data.count,
+        total: data.total
+      }));
+  }, [members]);
+
+  // Calculate member growth data
+  const memberGrowthData = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const growthData = [];
+    
+    for (let i = 0; i < 12; i++) {
+      const monthName = new Date(currentYear, i, 1).toLocaleString('default', { month: 'short' });
+      const monthMembers = members.filter(member => {
+        const joinDate = new Date(member.joinDate);
+        return joinDate.getFullYear() === currentYear && joinDate.getMonth() === i;
+      });
+      
+      growthData.push({
+        month: monthName,
+        newMembers: monthMembers.length,
+        revenue: monthMembers.reduce((sum, m) => sum + (Number(m.fee) || 0), 0)
+      });
+    }
+    
+    return growthData;
+  }, [members]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -181,81 +311,52 @@ export default function DashboardCharts({ members }: { members: any[] }) {
           <CardTitle>Subscription Status</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <PieChart>
-              {statusTotal === 0 ? (
-                <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fill="#94a3b8">
-                  No data
-                </text>
-              ) : (
-                <Pie
-                  data={statusDataFiltered}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={isMobile ? 50 : 60}
-                  outerRadius={isMobile ? 72 : 90}
-                  labelLine={!isMobile}
-                  label={isMobile ? false : renderPieLabel}
-                  dataKey="value"
-                >
-                  {statusDataFiltered.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                  {/* <Label
-                    position="center"
-                    content={() => (
-                      <text x={0} y={0} textAnchor="middle" dominantBaseline="middle">
-                        <tspan className="fill-slate-700 text-xl font-bold">{statusTotal}</tspan>
-                        <tspan x={0} dy={18} className="fill-slate-500 text-xs">Total</tspan>
-                      </text>
-                    )}
-                  /> */}
-                </Pie>
-              )}
-              <Tooltip formatter={(val: number, name: string) => [val, name]} />
-              {!isMobile && <Legend />}
-            </PieChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      {/* Monthly Revenue */}
-      <Card className="col-span-1 md:col-span-2">
-        <CardHeader>
-          <CardTitle>Monthly Revenue Projection</CardTitle>
-          <CardDescription>Expected revenue for active subscriptions</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <LineChart data={monthlyRevenue} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" tick={{ fontSize: isMobile ? 10 : 12 }} />
-              <YAxis tickFormatter={formatCurrency as any} tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 42 : 60} />
-              <Tooltip formatter={(val: number) => [formatCurrency(val), "Revenue"]} />
-              {!isMobile && <Legend />}
-              <Line type="monotone" dataKey="revenue" stroke="#3b82f6" dot={{ r: isMobile ? 2 : 3 }} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      {/* Member Join Dates */}
-      <Card className="col-span-1 md:col-span-2">
-        <CardHeader>
-          <CardTitle>Member Sign-ups by Month</CardTitle>
-          <CardDescription>New members joined each month</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={joinDatesData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" tick={{ fontSize: isMobile ? 10 : 12 }} />
-              <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 24 : 40} />
-              <Tooltip />
-              {!isMobile && <Legend />}
-              <Bar dataKey="members" fill="#8b5cf6" />
-            </BarChart>
-          </ResponsiveContainer>
+          <EChart 
+            option={{
+              tooltip: {
+                trigger: 'item',
+                formatter: '{a} <br/>{b}: {c} ({d}%)'
+              },
+              legend: {
+                show: !isMobile,
+                bottom: 0,
+                data: statusDataFiltered.map(item => item.name)
+              },
+              series: [
+                {
+                  name: 'Subscription Status',
+                  type: 'pie',
+                  radius: isMobile ? ['40%', '60%'] : ['45%', '70%'],
+                  avoidLabelOverlap: false,
+                  itemStyle: {
+                    borderRadius: 10,
+                    borderColor: '#fff',
+                    borderWidth: 2
+                  },
+                  label: {
+                    show: !isMobile,
+                    formatter: '{b}: {c} ({d}%)',
+                    position: 'outside'
+                  },
+                  emphasis: {
+                    label: {
+                      show: true,
+                      fontSize: 16,
+                      fontWeight: 'bold'
+                    }
+                  },
+                  labelLine: {
+                    show: !isMobile
+                  },
+                  data: statusDataFiltered.map((item, index) => ({
+                    value: item.value,
+                    name: item.name,
+                    itemStyle: { color: COLORS[index % COLORS.length] }
+                  }))
+                }
+              ]
+            }} 
+          />
         </CardContent>
       </Card>
     </div>

@@ -16,6 +16,7 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
     months: "",
     photo: null as File | null,
     joinDate: new Date().toISOString().slice(0, 10),
+    photoUrl: "https://res.cloudinary.com/dd5hqylnm/image/upload/v1768110379/xd1cktchdsgyugzmc4xy.jpg"
   })
   const [previewUrl, setPreviewUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -51,8 +52,8 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
     setError("")
     setSuccess("")
 
-    if (!formData.name || !formData.email || !formData.phone || !formData.fee || !formData.months || !formData.photo || !formData.joinDate) {
-      setError("All fields are required")
+    if (!formData.name || !formData.email || !formData.phone || !formData.fee || !formData.months || !formData.joinDate) {
+      setError("All fields except photo are required")
       return
     }
 
@@ -65,19 +66,23 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
         throw new Error("Cloudinary env not set: NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME / NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET")
       }
 
-      const photoFormData = new FormData()
-      photoFormData.append("file", formData.photo)
-      photoFormData.append("upload_preset", uploadPreset)
+      let photoUrl = formData.photoUrl;
+      
+      // Only upload photo if a new one was selected
+      if (formData.photo) {
+        const photoFormData = new FormData();
+        photoFormData.append("file", formData.photo);
+        photoFormData.append("upload_preset", uploadPreset);
 
-      // Direct upload to Cloudinary from client (bypasses server network issues)
-      const photoResponse = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: "POST",
-        body: photoFormData,
-      })
+        const photoResponse = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: "POST",
+          body: photoFormData,
+        });
 
-      if (!photoResponse.ok) throw new Error("Photo upload failed")
-
-      const photoData = await photoResponse.json()
+        if (!photoResponse.ok) throw new Error("Photo upload failed");
+        const photoData = await photoResponse.json();
+        photoUrl = photoData.secure_url || photoData.url;
+      }
 
       // Save member to database
       const memberResponse = await fetch("/api/members", {
@@ -89,15 +94,24 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
           phone: formData.phone,
           fee: Number.parseFloat(formData.fee),
           months: Number.parseInt(formData.months),
-          photoUrl: photoData.secure_url || photoData.url,
-          joinDate: new Date(formData.joinDate + "T00:00:00.000Z").toISOString(),
+          photoUrl: photoUrl,
+          joinDate: new Date(formData.joinDate).toISOString(),
         }),
       })
 
       if (!memberResponse.ok) throw new Error("Failed to save member")
 
       setSuccess("Member added successfully!")
-      setFormData({ name: "", email: "", phone: "", fee: "", months: "", photo: null, joinDate: new Date().toISOString().slice(0, 10) })
+      setFormData({ 
+        name: "", 
+        email: "", 
+        phone: "", 
+        fee: "", 
+        months: "", 
+        photo: null, 
+        joinDate: new Date().toISOString().slice(0, 10),
+        photoUrl: "https://res.cloudinary.com/dd5hqylnm/image/upload/v1768110036/c8g3yefrr8kjaul0ww6l.jpg"
+      })
       setPreviewUrl("")
 
       setTimeout(() => {
