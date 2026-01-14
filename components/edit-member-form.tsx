@@ -15,13 +15,24 @@ export default function EditMemberForm({ member, onCancel, onSuccess }: any) {
     name: member.name,
     email: member.email,
     phone: member.phone,
-    fee: member.fee.toString(),
-    months: Math.ceil((new Date(member.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)).toString(),
+    // treat fee as total fee in UI; compute from stored monthly fee * months
+    fee: (Number(member.fee || 0) * Number(member.months || 0)).toString(),
+    months: String(Number(member.months || 1)),
+    joinDate: new Date(member.joinDate).toISOString().slice(0, 10),
     photo: null as File | null,
   })
   const [previewUrl, setPreviewUrl] = useState(member.photoUrl)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [upcoming, setUpcoming] = useState(() => {
+    if (!member.nextPeriod) return null as null | { months: string; totalFee: string }
+    const m = Number(member.nextPeriod.months || 1)
+    const fee = Number(member.nextPeriod.fee || 0)
+    return {
+      months: String(m),
+      totalFee: (fee * m).toString(),
+    }
+  })
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -44,6 +55,32 @@ export default function EditMemberForm({ member, onCancel, onSuccess }: any) {
       }
       reader.readAsDataURL(file)
       setError("")
+    }
+  }
+
+  const handleUpcomingSubmit = async () => {
+    if (!upcoming) return
+    try {
+      setIsLoading(true)
+      const months = parseInt(upcoming.months || "0", 10)
+      const totalFee = parseFloat(upcoming.totalFee || "0")
+      if (!Number.isFinite(months) || months <= 0) throw new Error("Invalid upcoming months")
+      if (!Number.isFinite(totalFee) || totalFee < 0) throw new Error("Invalid upcoming total fee")
+
+      const res = await fetch(`/api/members/${member._id}/extend`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ months, totalFee }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error || "Failed to update upcoming subscription")
+      }
+      onSuccess()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -83,8 +120,12 @@ export default function EditMemberForm({ member, onCancel, onSuccess }: any) {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
-        fee: Number.parseFloat(formData.fee),
+        // compute per-month fee from total
+        fee: Number.parseFloat(formData.months || "0") > 0
+          ? Number.parseFloat(formData.fee) / Number.parseFloat(formData.months)
+          : 0,
         months: Number.parseInt(formData.months),
+        joinDate: new Date(formData.joinDate).toISOString(),
         photoUrl,
       }
       
@@ -129,18 +170,60 @@ export default function EditMemberForm({ member, onCancel, onSuccess }: any) {
               <Input name="phone" value={formData.phone} onChange={handleInputChange} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Monthly Fee (₹)</label>
+              <label className="text-sm font-medium">Total Fee (₹)</label>
               <Input name="fee" type="number" value={formData.fee} onChange={handleInputChange} step="0.01" />
+              {formData.fee && formData.months && Number(formData.months) > 0 && (
+                <p className="text-xs text-slate-500">Per-month: ₹{(Number(formData.fee) / Number(formData.months)).toFixed(2)}</p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Subscription Months</label>
               <Input name="months" type="number" value={formData.months} onChange={handleInputChange} min="1" />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Join Date</label>
+              <Input name="joinDate" type="date" value={formData.joinDate} onChange={handleInputChange} />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Photo (JPG, JPEG, PNG)</label>
               <Input name="photo" type="file" accept=".jpg,.jpeg,.png" onChange={handleFileChange} />
             </div>
           </div>
+
+          {member.nextPeriod && (
+            <div className="mt-6 space-y-3 border rounded-lg p-4">
+              <h4 className="font-semibold">Upcoming Subscription</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Months</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={upcoming?.months || ""}
+                    onChange={(e) => setUpcoming((p) => (p ? { ...p, months: e.target.value } : p))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium">Total Fee (₹)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={upcoming?.totalFee || ""}
+                    onChange={(e) => setUpcoming((p) => (p ? { ...p, totalFee: e.target.value } : p))}
+                  />
+                  {upcoming && Number(upcoming.months) > 0 && (
+                    <p className="text-xs text-slate-500">Per-month: ₹{(Number(upcoming.totalFee || 0) / Number(upcoming.months)).toFixed(2)}</p>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Button type="button" variant="secondary" onClick={handleUpcomingSubmit} disabled={isLoading}>
+                  {isLoading ? "Saving..." : "Update Upcoming"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {previewUrl && (
             <div className="mt-4">

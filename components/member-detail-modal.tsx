@@ -1,28 +1,34 @@
 "use client"
 
+import { useState } from "react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import Image from "next/image"
+import SubscriptionForm from "./subscription-form"
 
 export default function MemberDetailModal({
   member,
   onClose,
   onEdit,
   onDelete,
+  onExtended,
 }: {
   member: any | null
   onClose: () => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
+  onExtended?: () => void
 }) {
+  const [subOpen, setSubOpen] = useState(false)
   if (!member) return null
 
   const expiryDate = new Date(member.expiryDate)
   const today = new Date()
   const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  const isExpired = daysLeft <= 0
-  const isExpiringSoon = daysLeft <= 30 && daysLeft > 0
+  const hasUpcoming = !!member.nextPeriod
+  const isExpired = daysLeft <= 0 && !hasUpcoming
+  const isExpiringSoon = daysLeft <= 5 && daysLeft > 0
   const totalFee = Number(member.fee || 0) * Number(member.months || 0)
   const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 })
 
@@ -32,6 +38,25 @@ export default function MemberDetailModal({
       ? email.slice(0, maxLength) + "..."
       : email;
   };
+
+  const handleSubscriptionSubmit = async (data: { months: number; totalFee: number }) => {
+    try {
+      const res = await fetch(`/api/members/${member._id}/extend`, {
+        method: member.nextPeriod ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData?.error || "Failed to extend subscription")
+      }
+      onExtended?.()
+      setSubOpen(false)
+      onClose()
+    } catch (e) {
+      console.error("Failed to extend subscription", e)
+    }
+  }
 
 
   return (
@@ -58,7 +83,7 @@ export default function MemberDetailModal({
                     className={`px-3 py-1 rounded-full text-xs font-semibold ${isExpired ? "bg-red-100 text-red-800" : isExpiringSoon ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"
                       }`}
                   >
-                    {isExpired ? "Expired" : isExpiringSoon ? "Expiring Soon" : "Active"}
+                    {isExpired ? "Expired" : (daysLeft <= 0 && hasUpcoming) ? "Upcoming" : isExpiringSoon ? "Expiring Soon" : "Active"}
                   </span>
                 </div>
                 <p className="text-sm text-slate-500">{member.email}</p>
@@ -101,6 +126,29 @@ export default function MemberDetailModal({
                   </div>
                 </div>
               </div>
+              {member.nextPeriod && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-slate-900">Upcoming Subscription</h3>
+                  <div className="rounded-lg border p-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Start Date</span>
+                      <span className="font-medium">{new Date(member.nextPeriod.joinDate).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Duration</span>
+                      <span className="font-medium">{member.nextPeriod.months} months</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Monthly Fee</span>
+                      <span className="font-medium">{inr.format(Number(member.nextPeriod.fee || 0))}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Total Fee</span>
+                      <span className="font-semibold">{inr.format(Number(member.nextPeriod.fee || 0) * Number(member.nextPeriod.months || 0))}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <h3 className="font-semibold text-slate-900">Account</h3>
@@ -124,6 +172,13 @@ export default function MemberDetailModal({
 
         <div className="flex gap-3 mt-6">
           <Button
+            variant="secondary"
+            className="flex-1"
+            onClick={() => setSubOpen(true)}
+          >
+            Add Sub
+          </Button>
+          <Button
             className="flex-1"
             onClick={() => {
               onEdit(member._id)
@@ -146,6 +201,13 @@ export default function MemberDetailModal({
           </Button>
         </div>
       </Card>
+      <SubscriptionForm
+        open={subOpen}
+        onOpenChange={setSubOpen}
+        onSubmit={handleSubscriptionSubmit}
+        defaultMonths={member.nextPeriod ? String(member.nextPeriod.months) : "1"}
+        defaultTotalFee={member.nextPeriod ? String((Number(member.nextPeriod.fee || 0) * Number(member.nextPeriod.months || 0)).toFixed(2)) : ""}
+      />
     </div>
       </DialogContent >
     </Dialog >

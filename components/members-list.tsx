@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { AlertCircle, AlertTriangle, CheckCircle } from "lucide-react"
 import EditMemberForm from "./edit-member-form"
 import MemberDetailModal from "./member-detail-modal"
+import SubscriptionForm from "./subscription-form"
 
 export default function MembersList({
   members,
@@ -17,11 +18,37 @@ export default function MembersList({
   const [selectedMember, setSelectedMember] = useState<any | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "expiring-soon" | "expired">("all")
+  const [subscriptionFormOpen, setSubscriptionFormOpen] = useState(false)
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
 
   const calculateDaysLeft = (expiryDate: string) => {
     const today = new Date()
     const expiry = new Date(expiryDate)
     return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  const handleAddSubClick = (id: string) => {
+    setSelectedMemberId(id)
+    setSubscriptionFormOpen(true)
+  }
+
+  const handleSubscriptionSubmit = async (data: { months: number; totalFee: number }) => {
+    if (!selectedMemberId) return
+    try {
+      const res = await fetch(`/api/members/${selectedMemberId}/extend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData?.error || "Failed to extend subscription")
+      }
+      onRefresh()
+      setSubscriptionFormOpen(false)
+    } catch (e) {
+      console.error("Failed to extend subscription", e)
+    }
   }
 
   const filteredMembers = members.filter((member) => {
@@ -30,14 +57,15 @@ export default function MembersList({
       member.email.toLowerCase().includes(searchQuery.toLowerCase())
 
     const daysLeft = calculateDaysLeft(member.expiryDate)
+    const hasUpcoming = !!member.nextPeriod
     let matchesFilter = true
 
     if (filterStatus === "active") {
-      matchesFilter = daysLeft > 30
+      matchesFilter = (daysLeft > 5) || (daysLeft <= 0 && hasUpcoming) || (daysLeft > 0 && daysLeft > 5)
     } else if (filterStatus === "expiring-soon") {
-      matchesFilter = daysLeft <= 30 && daysLeft > 0
+      matchesFilter = daysLeft > 0 && daysLeft <= 5
     } else if (filterStatus === "expired") {
-      matchesFilter = daysLeft <= 0
+      matchesFilter = daysLeft <= 0 && !hasUpcoming
     }
 
     return matchesSearch && matchesFilter
@@ -45,12 +73,12 @@ export default function MembersList({
 
   const expiringCount = members.filter((m) => {
     const daysLeft = calculateDaysLeft(m.expiryDate)
-    return daysLeft <= 30 && daysLeft > 0
+    return daysLeft > 0 && daysLeft <= 5
   }).length
 
   const expiredCount = members.filter((m) => {
     const daysLeft = calculateDaysLeft(m.expiryDate)
-    return daysLeft <= 0
+    return daysLeft <= 0 && !m.nextPeriod
   }).length
 
   const handleDelete = async (id: string) => {
@@ -89,7 +117,7 @@ export default function MembersList({
               <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold text-yellow-900">{expiringCount} Subscription(s) Expiring Soon</p>
-                <p className="text-sm text-yellow-800">Members with subscriptions expiring within 30 days</p>
+                <p className="text-sm text-yellow-800">Members with subscriptions expiring within 5 days</p>
               </div>
             </div>
           )}
@@ -175,8 +203,16 @@ export default function MembersList({
                   <tbody>
                     {filteredMembers.map((member) => {
                       const daysLeft = calculateDaysLeft(member.expiryDate)
-                      const isExpiring = daysLeft <= 30 && daysLeft > 0
-                      const isExpired = daysLeft <= 0
+                      const hasUpcoming = !!member.nextPeriod
+                      const isExpiring = daysLeft <= 5 && daysLeft > 0
+                      const isExpired = daysLeft <= 0 && !hasUpcoming
+                      const labelText = isExpired
+                        ? "Expired"
+                        : daysLeft <= 0 && hasUpcoming
+                        ? "Upcoming"
+                        : daysLeft <= 5
+                        ? `Expiring in (${daysLeft} days)`
+                        : `Expiring in ${daysLeft} days`
 
                       return (
                         <tr
@@ -198,10 +234,18 @@ export default function MembersList({
                                   : "bg-green-100 text-green-800"
                               }`}
                             >
-                              {isExpired ? "Expired" : `${daysLeft} days`}
+                              {labelText}
                             </span>
                           </td>
                           <td className="p-2 space-x-2" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleAddSubClick(member._id)}
+                              disabled={!!member.nextPeriod}
+                            >
+                              {member.nextPeriod ? "Added" : "Add Sub"}
+                            </Button>
                             <Button size="sm" variant="outline" onClick={() => setEditingId(member._id)}>
                               Edit
                             </Button>
@@ -220,13 +264,21 @@ export default function MembersList({
               <div className="md:hidden space-y-3">
                 {filteredMembers.map((member) => {
                   const daysLeft = calculateDaysLeft(member.expiryDate)
-                  const isExpiring = daysLeft <= 30 && daysLeft > 0
-                  const isExpired = daysLeft <= 0
+                  const hasUpcoming = !!member.nextPeriod
+                  const isExpiring = daysLeft <= 5 && daysLeft > 0
+                  const isExpired = daysLeft <= 0 && !hasUpcoming
                   const badge = isExpired
                     ? "bg-red-100 text-red-800"
                     : isExpiring
                     ? "bg-yellow-100 text-yellow-800"
                     : "bg-green-100 text-green-800"
+                  const labelText = isExpired
+                    ? "Expired"
+                    : daysLeft <= 0 && hasUpcoming
+                    ? "Upcoming"
+                    : daysLeft <= 5
+                    ? `Expiring in (${daysLeft} days)`
+                    : `Expiring in ${daysLeft} days`
                   return (
                     <div
                       key={member._id}
@@ -236,7 +288,7 @@ export default function MembersList({
                       <div className="flex items-center justify-between">
                         <div className="font-semibold text-slate-900">{member.name}</div>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${badge}`}>
-                          {isExpired ? "Expired" : `${daysLeft} days`}
+                          {labelText}
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-slate-600 break-all">{member.email}</div>
@@ -246,6 +298,7 @@ export default function MembersList({
                         <div className="font-medium">₹{member.fee.toFixed(2)}</div>
                       </div>
                       <div className="mt-2 flex gap-2">
+                        <Button size="sm" variant="secondary" className="flex-1" onClick={(e) => { e.stopPropagation(); handleAddSubClick(member._id) }}>Add Sub</Button>
                         <Button size="sm" variant="outline" className="flex-1" onClick={(e) => { e.stopPropagation(); setEditingId(member._id) }}>Edit</Button>
                         <Button size="sm" variant="destructive" className="flex-1" onClick={(e) => { e.stopPropagation(); handleDelete(member._id) }}>Delete</Button>
                       </div>
@@ -258,11 +311,18 @@ export default function MembersList({
         </CardContent>
       </Card>
 
+      <SubscriptionForm
+        open={subscriptionFormOpen}
+        onOpenChange={setSubscriptionFormOpen}
+        onSubmit={handleSubscriptionSubmit}
+      />
+
       <MemberDetailModal
         member={selectedMember}
         onClose={() => setSelectedMember(null)}
         onEdit={setEditingId}
         onDelete={handleDelete}
+        onExtended={() => onRefresh()}
       />
     </>
   )

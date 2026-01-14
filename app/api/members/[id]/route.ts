@@ -24,9 +24,20 @@ export async function PUT(
     }
 
     const months = Number(body.months)
-    const expiryDate = new Date(
-      Date.now() + months * 30 * 24 * 60 * 60 * 1000
-    ).toISOString()
+    // compute expiry using calendar months based on provided joinDate (fallback to existing or today)
+    const baseJoin = body.joinDate ? new Date(body.joinDate) : new Date()
+    const joinUtc = new Date(Date.UTC(baseJoin.getUTCFullYear(), baseJoin.getUTCMonth(), baseJoin.getUTCDate(), 0, 0, 0, 0))
+    const addMonths = (d: Date, m: number) => {
+      const year = d.getUTCFullYear()
+      const month = d.getUTCMonth()
+      const day = d.getUTCDate()
+      const targetMonth = month + m
+      const targetDate = new Date(Date.UTC(year, targetMonth, 1))
+      const lastDay = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 0)).getUTCDate()
+      targetDate.setUTCDate(Math.min(day, lastDay))
+      return targetDate
+    }
+    const expiryDate = addMonths(joinUtc, months).toISOString()
 
     const db = await getDb()
 
@@ -55,6 +66,7 @@ export async function PUT(
       fee: body.fee,
       months: body.months,
       photoUrl: body.photoUrl,
+      joinDate: joinUtc.toISOString(),
       expiryDate: expiryDate
     }
     

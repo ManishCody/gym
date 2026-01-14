@@ -92,7 +92,10 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
-          fee: Number.parseFloat(formData.fee),
+          // Interpret input as total fee and compute per-month fee
+          fee: Number.parseFloat(formData.months || "0") > 0
+            ? Number.parseFloat(formData.fee) / Number.parseFloat(formData.months)
+            : 0,
           months: Number.parseInt(formData.months),
           photoUrl: photoUrl,
           joinDate: new Date(formData.joinDate).toISOString(),
@@ -152,7 +155,7 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
               <Input name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Phone number" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Monthly Fee (₹)</label>
+              <label className="text-sm font-medium">Total Fee (₹)</label>
               <Input
                 name="fee"
                 type="number"
@@ -161,6 +164,9 @@ export default function MemberForm({ onSuccess }: { onSuccess: () => void }) {
                 placeholder="0"
                 step="0.01"
               />
+              {formData.fee && formData.months && Number(formData.months) > 0 && (
+                <p className="text-xs text-slate-500">Per-month: ₹{(Number(formData.fee) / Number(formData.months)).toFixed(2)}</p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Subscription Months</label>
