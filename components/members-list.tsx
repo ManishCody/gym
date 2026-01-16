@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { AlertCircle, AlertTriangle, CheckCircle } from "lucide-react"
+import { AlertCircle, AlertTriangle, CheckCircle, Clock, Calendar, CalendarCheck } from "lucide-react"
+import { format, addDays, isAfter, isBefore, parseISO, isToday, isTomorrow, differenceInDays } from 'date-fns'
 import EditMemberForm from "./edit-member-form"
 import MemberDetailModal from "./member-detail-modal"
 import SubscriptionForm from "./subscription-form"
@@ -27,12 +28,29 @@ export default function MembersList({
     return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   }
 
-  const handleAddSubClick = (id: string) => {
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const today = new Date()
+    const diffDays = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (isToday(date)) return 'Today'
+    if (isTomorrow(date)) return 'Tomorrow'
+    if (diffDays > 0 && diffDays <= 7) return `In ${diffDays} days`
+    return format(date, 'MMM d, yyyy')
+  }
+
+  const handleAddSubClick = (id: string, currentExpiry?: string) => {
     setSelectedMemberId(id)
+    setSelectedMember(members.find(m => m._id === id) || null)
     setSubscriptionFormOpen(true)
   }
 
-  const handleSubscriptionSubmit = async (data: { months: number; totalFee: number }) => {
+  const handleSubscriptionSubmit = async (data: { 
+    months: number; 
+    totalFee: number;
+    startDate?: string;
+    startAfterDays?: number;
+  }) => {
     if (!selectedMemberId) return
     try {
       const res = await fetch(`/api/members/${selectedMemberId}/extend`, {
@@ -58,12 +76,16 @@ export default function MembersList({
 
     const daysLeft = calculateDaysLeft(member.expiryDate)
     const hasUpcoming = !!member.nextPeriod
+    const startDate = member.nextPeriod?.startDate ? new Date(member.nextPeriod.startDate) : null
+    const isUpcomingScheduled = hasUpcoming && startDate ? isAfter(startDate, new Date()) : false
+    
     let matchesFilter = true
 
     if (filterStatus === "active") {
       matchesFilter = (daysLeft > 5) || (daysLeft <= 0 && hasUpcoming) || (daysLeft > 0 && daysLeft > 5)
     } else if (filterStatus === "expiring-soon") {
-      matchesFilter = daysLeft > 0 && daysLeft <= 5
+      matchesFilter = (daysLeft > 0 && daysLeft <= 5) || 
+        (isUpcomingScheduled && startDate ? differenceInDays(startDate, new Date()) <= 5 : false)
     } else if (filterStatus === "expired") {
       matchesFilter = daysLeft <= 0 && !hasUpcoming
     }
@@ -87,6 +109,7 @@ export default function MembersList({
     try {
       const response = await fetch(`/api/members/${id}`, { method: "DELETE" })
       if (response.ok) {
+        setSelectedMember(null)
         onRefresh()
       }
     } catch (error) {
@@ -237,21 +260,23 @@ export default function MembersList({
                               {labelText}
                             </span>
                           </td>
-                          <td className="p-2 space-x-2" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => handleAddSubClick(member._id)}
-                              disabled={!!member.nextPeriod}
-                            >
-                              {member.nextPeriod ? "Added" : "Add Sub"}
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => setEditingId(member._id)}>
-                              Edit
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleDelete(member._id)}>
-                              Delete
-                            </Button>
+                          <td className="p-2">
+                            <div className="flex gap-2">
+                              <Button
+                                variant={member.nextPeriod ? "outline" : "default"}
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleAddSubClick(member._id, member.expiryDate) }}
+                                className="min-w-[100px]"
+                              >
+                                {member.nextPeriod ? 'Modify Sub' : 'Add Sub'}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setEditingId(member._id) }}>
+                                Edit
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleDelete(member._id) }}>
+                                Delete
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -298,7 +323,7 @@ export default function MembersList({
                         <div className="font-medium">₹{member.fee.toFixed(2)}</div>
                       </div>
                       <div className="mt-2 flex gap-2">
-                        <Button size="sm" variant="secondary" className="flex-1" onClick={(e) => { e.stopPropagation(); handleAddSubClick(member._id) }}>Add Sub</Button>
+                        <Button size="sm" variant="secondary" className="flex-1" onClick={(e) => { e.stopPropagation(); handleAddSubClick(member._id, member.expiryDate) }}>Add Sub</Button>
                         <Button size="sm" variant="outline" className="flex-1" onClick={(e) => { e.stopPropagation(); setEditingId(member._id) }}>Edit</Button>
                         <Button size="sm" variant="destructive" className="flex-1" onClick={(e) => { e.stopPropagation(); handleDelete(member._id) }}>Delete</Button>
                       </div>
@@ -315,6 +340,8 @@ export default function MembersList({
         open={subscriptionFormOpen}
         onOpenChange={setSubscriptionFormOpen}
         onSubmit={handleSubscriptionSubmit}
+        loading={false}
+        currentExpiry={selectedMember?.expiryDate}
       />
 
       <MemberDetailModal

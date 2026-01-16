@@ -39,10 +39,10 @@ export default function MemberDetailModal({
       : email;
   };
 
-  const handleSubscriptionSubmit = async (data: { months: number; totalFee: number }) => {
+  const handleSubscriptionSubmit = async (data: { months: number; totalFee: number; startDate?: string }) => {
     try {
       const res = await fetch(`/api/members/${member._id}/extend`, {
-        method: member.nextPeriod ? "PATCH" : "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
@@ -207,6 +207,7 @@ export default function MemberDetailModal({
         onSubmit={handleSubscriptionSubmit}
         defaultMonths={member.nextPeriod ? String(member.nextPeriod.months) : "1"}
         defaultTotalFee={member.nextPeriod ? String((Number(member.nextPeriod.fee || 0) * Number(member.nextPeriod.months || 0)).toFixed(2)) : ""}
+        currentExpiry={member.expiryDate}
       />
     </div>
       </DialogContent >
